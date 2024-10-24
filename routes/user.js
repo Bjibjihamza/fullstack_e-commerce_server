@@ -7,7 +7,9 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const fs = require("fs");
 const path = require('path');
-const { error } = require('console');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+
 
 
 const cloudinary = require('cloudinary').v2;
@@ -33,6 +35,15 @@ const storage = multer.diskStorage({
         // imagesArr.push(`${Date.now()}_${file.originalname}`)
     }
 })
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, 
+    max: 10, 
+    message: {
+        error: true,
+        msg: "Too many registration attempts, please try again after 15 minutes."
+    }
+});
 
 const upload = multer({ storage: storage });
 
@@ -96,54 +107,50 @@ router.post(`/upload`, upload.array("images"), async (req, res) => {
     res.send(imagesArr)
 })
 
-
-
-
-
-
-
-
-router.post(`/signup`, async (req, res) => {
+router.post(`/signup`, limiter, async (req, res) => {
     const { name, phone, email, password } = req.body;
 
     try {
-        const existingUser = await User.findOne({ email: email });
+        const existingUser = await User.findOne({ email });
         if (existingUser) {
             return res.status(400).json({ error: true, msg: "User with this email already exists!" });
         }
 
-        const existingUserByPh = await User.findOne({ phone: phone });
+        const existingUserByPh = await User.findOne({ phone });
         if (existingUserByPh) {
             return res.status(400).json({ error: true, msg: "User with this phone number already exists!" });
         }
 
-        const hashPassword = await bcrypt.hash(password, 10);
+        // Hash password
+        const hashPassword = await bcrypt.hash(password, 12); // Increase bcrypt rounds to 12
 
+        // Create new user
         const result = await User.create({
-            name: name,
-            phone: phone,
-            email: email,
+            name,
+            phone,
+            email,
             password: hashPassword
         });
 
-        const token = jwt.sign({ email: result.email, id: result._id }, process.env.JSON_WEB_TOKEN_SECRET_KEY);
+        // Generate JWT token with expiration
+        const token = jwt.sign({ email: result.email, id: result._id }, process.env.JSON_WEB_TOKEN_SECRET_KEY, { expiresIn: '1h' });
 
-        // Retourne la réponse lorsque l'inscription réussit
+        // Return the response when the signup is successful
         return res.status(200).json({
             user: result,
             token: token
         });
 
     } catch (error) {
-        console.log(error);
-        // Retourne une réponse d'erreur en cas d'exception
-        return res.status(500).json({ error: true, msg: "Something went wrong" });
+        console.error(error);
+        return res.status(500).json({ error: true, msg: "Something went wrong." });
     }
 });
 
 
 router.post(`/signin`, async (req, res) => {
     const { email, password } = req.body;
+
     try {
         const existingUser = await User.findOne({ email: email });
 
@@ -162,14 +169,13 @@ router.post(`/signin`, async (req, res) => {
         return res.status(200).json({
             user: existingUser,
             token: token,
-            msg: "User Authenticated"
+            msg: "User authenticated successfully."
         });
 
     } catch (error) {
-        return res.status(500).json({ error: true, msg: "Something went wrong" });
+        return res.status(500).json({ error: true, msg: "Something went wrong. Please try again." });
     }
 });
-
 
 
 router.put(`/changePassword/:id` , async(req,res) => {
@@ -214,8 +220,6 @@ router.put(`/changePassword/:id` , async(req,res) => {
 
 })
 
-
-
 router.get('/', async (req, res) => {
     const userList = await User.find();
 
@@ -250,7 +254,6 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-
 router.get(`/get/count`, async (req, res) => {
     const userCount = await User.countDocument((count) => count);
 
@@ -261,7 +264,6 @@ router.get(`/get/count`, async (req, res) => {
         userCount: userCount
     })
 })
-
 
 router.put('/:id', async (req, res) => {
 
@@ -292,8 +294,6 @@ router.put('/:id', async (req, res) => {
 
     res.send(user);
 });
-
-
 
 
 module.exports = router;
