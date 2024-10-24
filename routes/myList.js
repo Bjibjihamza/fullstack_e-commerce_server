@@ -46,7 +46,7 @@ router.post('/add', async (req, res) => {
 
         res.status(201).json(list);
     } else {
-        res.json({ status: false, msg: `${item]` });
+        res.json({ status: false, msg: "somting wrong" });
     }
 
 });
